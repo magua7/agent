@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "excluded": [],
+  "groups": [
+    {
+      "id": "builtin-local-discovery",
+      "skills": [
+        "local-service-discovery"
+      ],
+      "enabled": true,
+      "task_types": [
+        "pentest"
+      ],
+      "role": "leaf",
+      "risk_class": "active",
+      "required_capabilities": [
+        "network.scan"
+      ],
+      "human_approval_required": true,
+      "resource_loading": "metadata_only"
+    }
+  ]
+}

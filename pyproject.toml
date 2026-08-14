@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "security-agent-kernel"
+version = "0.1.0"
+description = "A lightweight, evidence-driven runtime for authorized security tasks"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Security Agent contributors" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+]
+dependencies = [
+    "httpx>=0.27,<1",
+]
+
+[project.optional-dependencies]
+# Reserved extension boundaries. They intentionally add no dependency until an
+# adapter is implemented, so installing an extra never pretends a feature exists.
+web = []
+mcp = []
+knowledge = []
+dev = [
+    "mypy>=1.11,<2",
+    "ruff>=0.8,<1",
+]
+
+[project.scripts]
+security-agent = "security_agent.interfaces.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+security_agent = [
+    "py.typed",
+    "builtin_skills/policy.json",
+    "builtin_skills/*/SKILL.md",
+    "builtin_skills/*/skill.yaml",
+]
+
+[tool.setuptools.data-files]
+"share/security-agent/docs" = [
+    "docs/ARCHITECTURE.md",
+    "docs/DOMAIN_MODEL.md",
+    "docs/EXTENSION_POINTS.md",
+    "docs/REFERENCE_RESEARCH.md",
+    "docs/SKILLS.md",
+]
+"share/security-agent/skills/local-service-discovery" = [
+    "skills/local-service-discovery/SKILL.md",
+    "skills/local-service-discovery/skill.yaml",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+extend-exclude = ["skills/**"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ASYNC240", "S101"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+pretty = true
+files = ["src", "tests", "scripts/adapt_skill_corpus.py"]
+
+[tool.coverage.run]
+branch = true
+source = ["security_agent"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

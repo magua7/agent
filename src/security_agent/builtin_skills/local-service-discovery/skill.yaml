@@ -1,0 +1,8 @@
+{
+  "name": "local-service-discovery",
+  "description": "Bounded discovery of listening TCP services on an explicitly authorized local target.",
+  "applicable_tasks": ["pentest"],
+  "required_capabilities": ["network.scan"],
+  "verification_guidance": "Accept only scanner-produced evidence tied to the action; report the actual engine and open ports, and do not infer software versions without banner evidence.",
+  "references": []
+}

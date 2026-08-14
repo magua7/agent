@@ -1,0 +1,367 @@
+{
+  "schema_version": 1,
+  "excluded": [
+    {
+      "skill": "php-audit-skills",
+      "reason": "Isolate as a separate plugin or constrained process: it is a nested repository with executable PHP and shell tooling, generated assets, and its own multi-agent workflow."
+    }
+  ],
+  "groups": [
+    {
+      "id": "native-local-discovery",
+      "skills": [
+        "local-service-discovery"
+      ],
+      "enabled": true,
+      "task_types": [
+        "pentest"
+      ],
+      "role": "leaf",
+      "risk_class": "active",
+      "required_capabilities": [
+        "network.scan"
+      ],
+      "human_approval_required": true,
+      "resource_loading": "metadata_only"
+    },
+    {
+      "id": "pentest-routers",
+      "skills": [
+        "api-sec",
+        "auth-sec",
+        "business-logic-vuln",
+        "file-access-vuln",
+        "hack",
+        "injection-checking",
+        "recon-for-sec"
+      ],
+      "enabled": true,
+      "task_types": [
+        "pentest"
+      ],
+      "role": "router",
+      "risk_class": "passive",
+      "required_capabilities": [],
+      "human_approval_required": false,
+      "resource_loading": "linked_markdown"
+    },
+    {
+      "id": "pentest-quality-gate",
+      "skills": [
+        "pentest-quality-gate"
+      ],
+      "enabled": true,
+      "task_types": [
+        "pentest"
+      ],
+      "role": "quality_gate",
+      "risk_class": "passive",
+      "required_capabilities": [],
+      "human_approval_required": false,
+      "resource_loading": "metadata_only"
+    },
+    {
+      "id": "active-recon-orchestrators",
+      "skills": [
+        "api-recon-and-docs",
+        "recon-and-methodology"
+      ],
+      "enabled": false,
+      "task_types": [
+        "pentest"
+      ],
+      "role": "orchestrator",
+      "risk_class": "active",
+      "required_capabilities": [],
+      "human_approval_required": true,
+      "resource_loading": "linked_markdown"
+    },
+    {
+      "id": "active-exposure-review",
+      "skills": [
+        "insecure-source-code-management"
+      ],
+      "enabled": false,
+      "task_types": [
+        "pentest"
+      ],
+      "role": "leaf",
+      "risk_class": "active",
+      "required_capabilities": [],
+      "human_approval_required": true,
+      "resource_loading": "linked_markdown"
+    },
+    {
+      "id": "passive-forensics",
+      "skills": [
+        "memory-forensics-volatility",
+        "steganography-techniques",
+        "traffic-analysis-pcap"
+      ],
+      "enabled": true,
+      "task_types": [
+        "incident_response",
+        "reverse_analysis",
+        "ctf"
+      ],
+      "role": "leaf",
+      "risk_class": "passive",
+      "required_capabilities": [],
+      "human_approval_required": false,
+      "resource_loading": "linked_markdown"
+    },
+    {
+      "id": "passive-cryptanalysis",
+      "skills": [
+        "classical-cipher-analysis",
+        "hash-attack-techniques",
+        "lattice-crypto-attacks",
+        "rsa-attack-techniques",
+        "symmetric-cipher-attacks"
+      ],
+      "enabled": true,
+      "task_types": [
+        "reverse_analysis",
+        "ctf"
+      ],
+      "role": "leaf",
+      "risk_class": "passive",
+      "required_capabilities": [],
+      "human_approval_required": false,
+      "resource_loading": "linked_markdown"
+    },
+    {
+      "id": "passive-reverse-analysis",
+      "skills": [
+        "code-obfuscation-deobfuscation",
+        "symbolic-execution-tools",
+        "vm-and-bytecode-reverse"
+      ],
+      "enabled": true,
+      "task_types": [
+        "reverse_analysis",
+        "ctf"
+      ],
+      "role": "leaf",
+      "risk_class": "passive",
+      "required_capabilities": [],
+      "human_approval_required": false,
+      "resource_loading": "linked_markdown"
+    },
+    {
+      "id": "active-ai-security",
+      "skills": [
+        "ai-ml-security",
+        "llm-prompt-injection"
+      ],
+      "enabled": false,
+      "task_types": [
+        "pentest"
+      ],
+      "role": "leaf",
+      "risk_class": "active",
+      "required_capabilities": [],
+      "human_approval_required": true,
+      "resource_loading": "linked_markdown"
+    },
+    {
+      "id": "active-spa-orchestrator",
+      "skills": [
+        "spa-browser-pentest"
+      ],
+      "enabled": false,
+      "task_types": [
+        "pentest"
+      ],
+      "role": "orchestrator",
+      "risk_class": "active",
+      "required_capabilities": [],
+      "human_approval_required": true,
+      "resource_loading": "metadata_only"
+    },
+    {
+      "id": "active-web-and-api-testing",
+      "skills": [
+        "401-403-bypass-techniques",
+        "api-auth-and-jwt-abuse",
+        "api-authorization-and-bola",
+        "authbypass-authentication-flaws",
+        "business-logic-vulnerabilities",
+        "clickjacking",
+        "cmdi-command-injection",
+        "cors-cross-origin-misconfiguration",
+        "crlf-injection",
+        "csrf-cross-site-request-forgery",
+        "csv-formula-injection",
+        "dangling-markup-injection",
+        "dns-rebinding-attacks",
+        "email-header-injection",
+        "expression-language-injection",
+        "graphql-and-hidden-parameters",
+        "http2-specific-attacks",
+        "http-host-header-attacks",
+        "http-parameter-pollution",
+        "idor-broken-object-authorization",
+        "jwt-oauth-token-attacks",
+        "nosql-injection",
+        "oauth-oidc-misconfiguration",
+        "open-redirect",
+        "path-traversal-lfi",
+        "prototype-pollution",
+        "race-condition",
+        "request-smuggling",
+        "saml-sso-assertion-attacks",
+        "sqli-sql-injection",
+        "ssrf-server-side-request-forgery",
+        "ssti-server-side-template-injection",
+        "subdomain-takeover",
+        "type-juggling",
+        "upload-insecure-files",
+        "web-cache-deception",
+        "websocket-security",
+        "xslt-injection",
+        "xss-cross-site-scripting",
+        "xxe-xml-external-entity"
+      ],
+      "enabled": false,
+      "task_types": [
+        "pentest"
+      ],
+      "role": "leaf",
+      "risk_class": "active",
+      "required_capabilities": [],
+      "human_approval_required": true,
+      "resource_loading": "linked_markdown"
+    },
+    {
+      "id": "lab-host-and-identity-operations",
+      "skills": [
+        "active-directory-acl-abuse",
+        "active-directory-certificate-services",
+        "active-directory-kerberos-attacks",
+        "android-pentesting-tricks",
+        "container-escape-techniques",
+        "ios-pentesting-tricks",
+        "kubernetes-pentesting",
+        "linux-lateral-movement",
+        "linux-privilege-escalation",
+        "macos-process-injection",
+        "network-protocol-attacks",
+        "ntlm-relay-coercion",
+        "reverse-shell-techniques",
+        "tunneling-and-pivoting",
+        "unauthorized-access-common-services",
+        "windows-lateral-movement",
+        "windows-privilege-escalation"
+      ],
+      "enabled": false,
+      "task_types": [
+        "pentest",
+        "ctf"
+      ],
+      "role": "leaf",
+      "risk_class": "lab_only",
+      "required_capabilities": [],
+      "human_approval_required": true,
+      "resource_loading": "linked_markdown"
+    },
+    {
+      "id": "lab-binary-and-kernel-exploitation",
+      "skills": [
+        "anti-debugging-techniques",
+        "arbitrary-write-to-rce",
+        "binary-protection-bypass",
+        "browser-exploitation-v8",
+        "format-string-exploitation",
+        "heap-exploitation",
+        "kernel-exploitation",
+        "prototype-pollution-advanced",
+        "sandbox-escape-techniques",
+        "stack-overflow-and-rop"
+      ],
+      "enabled": false,
+      "task_types": [
+        "pentest",
+        "reverse_analysis",
+        "ctf"
+      ],
+      "role": "leaf",
+      "risk_class": "lab_only",
+      "required_capabilities": [],
+      "human_approval_required": true,
+      "resource_loading": "linked_markdown"
+    },
+    {
+      "id": "lab-evasion-and-security-bypass",
+      "skills": [
+        "csp-bypass-advanced",
+        "linux-security-bypass",
+        "macos-security-bypass",
+        "mobile-ssl-pinning-bypass",
+        "waf-bypass-techniques",
+        "windows-av-evasion"
+      ],
+      "enabled": false,
+      "task_types": [
+        "pentest",
+        "reverse_analysis",
+        "ctf"
+      ],
+      "role": "leaf",
+      "risk_class": "lab_only",
+      "required_capabilities": [],
+      "human_approval_required": true,
+      "resource_loading": "linked_markdown"
+    },
+    {
+      "id": "lab-supply-chain-and-contract-exploitation",
+      "skills": [
+        "defi-attack-patterns",
+        "dependency-confusion",
+        "deserialization-insecure",
+        "jndi-injection",
+        "smart-contract-vulnerabilities"
+      ],
+      "enabled": false,
+      "task_types": [
+        "pentest",
+        "ctf"
+      ],
+      "role": "leaf",
+      "risk_class": "lab_only",
+      "required_capabilities": [],
+      "human_approval_required": true,
+      "resource_loading": "linked_markdown"
+    },
+    {
+      "id": "ctf-orchestrator",
+      "skills": [
+        "ctf-solve-mode"
+      ],
+      "enabled": false,
+      "task_types": [
+        "ctf"
+      ],
+      "role": "orchestrator",
+      "risk_class": "lab_only",
+      "required_capabilities": [],
+      "human_approval_required": true,
+      "resource_loading": "metadata_only"
+    },
+    {
+      "id": "ctf-web-leaf",
+      "skills": [
+        "web-ctf-lfi"
+      ],
+      "enabled": false,
+      "task_types": [
+        "ctf"
+      ],
+      "role": "leaf",
+      "risk_class": "lab_only",
+      "required_capabilities": [],
+      "human_approval_required": true,
+      "resource_loading": "metadata_only"
+    }
+  ]
+}

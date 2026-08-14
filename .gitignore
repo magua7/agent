@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.coverage
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+build/
+dist/
+*.sqlite
+*.sqlite3
+runtime-data/
+.env
+
+# Deferred external white-box audit plugin. Keep it local until its scripts,
+# provenance, and sandbox contract are reviewed independently.
+skills/php-audit-skills/
