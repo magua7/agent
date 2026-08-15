@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import secrets
 from dataclasses import dataclass
@@ -9,8 +10,16 @@ from pathlib import Path
 
 from security_agent.application.auth_service import AuthService
 from security_agent.application.run_service import RunService
+from security_agent.application.settings import (
+    ProductSettings,
+    load_product_settings,
+)
 from security_agent.application.task_service import TaskService
 from security_agent.engine import RunLimits
+from security_agent.infrastructure.llm import (
+    OpenAICompatibleConfig,
+    OpenAICompatibleProvider,
+)
 from security_agent.infrastructure.storage.product import SQLiteProductStore
 from security_agent.interfaces.bootstrap import RuntimeBundle, build_local_runtime
 
@@ -23,11 +32,21 @@ class ProductServices:
     products: SQLiteProductStore
     runtime: RuntimeBundle
     database: Path
+    settings: ProductSettings
+    llm_provider: OpenAICompatibleProvider | None = None
 
     async def close(self) -> None:
-        await self.runs.close()
-        await self.products.close()
-        await self.runtime.close()
+        try:
+            await self.runs.close()
+        finally:
+            try:
+                await self.products.close()
+            finally:
+                try:
+                    await self.runtime.close()
+                finally:
+                    if self.llm_provider is not None:
+                        await self.llm_provider.aclose()
 
 
 async def build_product_services(
@@ -39,15 +58,31 @@ async def build_product_services(
     skills_root: Path | None = None,
     run_limits: RunLimits | None = None,
     max_concurrent_runs: int = 2,
+    settings_path: Path | None = None,
 ) -> ProductServices:
     resolved_database = (database or default_database()).expanduser().resolve()
     resolved_database.parent.mkdir(parents=True, exist_ok=True)
-    runtime = await build_local_runtime(
-        resolved_database,
-        skills_root=skills_root or default_skills_root(),
-        run_limits=run_limits,
-        capture_events=False,
+    settings = (
+        ProductSettings()
+        if settings_path is None
+        else await asyncio.to_thread(
+            _load_resolved_settings,
+            settings_path,
+        )
     )
+    llm_provider = _build_llm_provider(settings)
+    try:
+        runtime = await build_local_runtime(
+            resolved_database,
+            skills_root=skills_root or default_skills_root(),
+            llm_provider=llm_provider,
+            run_limits=run_limits,
+            capture_events=False,
+        )
+    except BaseException:
+        if llm_provider is not None:
+            await llm_provider.aclose()
+        raise
     products = SQLiteProductStore(resolved_database)
     try:
         await products.initialize()
@@ -71,11 +106,24 @@ async def build_product_services(
             products=products,
             runtime=runtime,
             database=resolved_database,
+            settings=settings,
+            llm_provider=llm_provider,
         )
-    except Exception:
-        await products.close()
-        await runtime.close()
+    except BaseException:
+        try:
+            await products.close()
+        finally:
+            try:
+                await runtime.close()
+            finally:
+                if llm_provider is not None:
+                    await llm_provider.aclose()
         raise
+
+
+async def build_default_product_services() -> ProductServices:
+    """Build the CLI/Web product using the private root ``settings.json``."""
+    return await build_product_services(settings_path=default_settings_path())
 
 
 def project_root() -> Path:
@@ -94,6 +142,10 @@ def default_database() -> Path:
         return Path(configured)
     data_dir = os.environ.get("SEC_GO_DATA_DIR")
     return (Path(data_dir) if data_dir else project_root() / "data") / "sec-go.db"
+
+
+def default_settings_path() -> Path:
+    return project_root() / "settings.json"
 
 
 def default_skills_root() -> Path | None:
@@ -126,3 +178,22 @@ def _load_or_create_secret(data_directory: Path) -> bytes:
     if len(existing) < 32:
         raise ValueError(f"JWT secret file is invalid: {secret_path}")
     return existing
+
+
+def _build_llm_provider(settings: ProductSettings) -> OpenAICompatibleProvider | None:
+    llm = settings.llm
+    if not llm.enabled:
+        return None
+    return OpenAICompatibleProvider(
+        OpenAICompatibleConfig(
+            base_url=llm.base_url,
+            api_key=llm.api_key,
+            model=llm.model,
+            timeout_seconds=llm.timeout_seconds,
+            max_response_bytes=llm.max_response_bytes,
+        )
+    )
+
+
+def _load_resolved_settings(path: Path) -> ProductSettings:
+    return load_product_settings(path.expanduser().resolve())

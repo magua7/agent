@@ -23,6 +23,7 @@ frontend/*.tsbuildinfo
 .env
 .env.*
 !.env.example
+/settings.json
 
 # Deferred external white-box audit plugin. Keep it local until its scripts,
 # provenance, and sandbox contract are reviewed independently.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -20,7 +20,7 @@ class LLMProviderError(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class OpenAICompatibleConfig:
     base_url: str
-    api_key: str
+    api_key: str = field(repr=False)
     model: str
     timeout_seconds: float = 60.0
     max_response_bytes: int = 2_000_000

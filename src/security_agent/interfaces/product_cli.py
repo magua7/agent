@@ -8,10 +8,15 @@ import json
 import os
 import sys
 from collections.abc import Sequence
+from functools import partial
 from pathlib import Path
 from typing import Any
 
-from security_agent.application.bootstrap import build_product_services, default_database
+from security_agent.application.bootstrap import (
+    build_product_services,
+    default_database,
+    default_settings_path,
+)
 from security_agent.application.task_service import TaskInputError
 from security_agent.domain import RunStatus
 from security_agent.engine import RunLimits
@@ -31,12 +36,38 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--ports", default="22,80,443,8000,8080")
     run.add_argument("--db", type=Path, default=default_database())
     run.add_argument("--skills", type=Path, default=None)
+    run.add_argument(
+        "--settings",
+        type=Path,
+        default=default_settings_path(),
+        help="private JSON settings file (default: ./settings.json)",
+    )
     run.add_argument("--max-seconds", type=float, default=120.0)
     run.add_argument("--json", action="store_true", dest="as_json")
+
+    interactive = commands.add_parser(
+        "interactive",
+        help="prompt for an authorized localhost task (used by start.bat)",
+    )
+    interactive.add_argument("--db", type=Path, default=default_database())
+    interactive.add_argument("--skills", type=Path, default=None)
+    interactive.add_argument(
+        "--settings",
+        type=Path,
+        default=default_settings_path(),
+        help="private JSON settings file (default: ./settings.json)",
+    )
+    interactive.add_argument("--max-seconds", type=float, default=120.0)
 
     serve = commands.add_parser("serve", help="start the local FastAPI service")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
+    serve.add_argument(
+        "--settings",
+        type=Path,
+        default=default_settings_path(),
+        help="private JSON settings file (default: ./settings.json)",
+    )
 
     init = commands.add_parser("init", help="initialize the local database and admin account")
     init.add_argument("--db", type=Path, default=default_database())
@@ -52,17 +83,40 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "run":
             return asyncio.run(_run_task(args))
+        if args.command == "interactive":
+            return _interactive(args)
         if args.command == "init":
             return asyncio.run(_initialize(args.db))
         if args.command == "serve":
-            return _serve(args.host, args.port)
+            return _serve(args.host, args.port, args.settings)
     except KeyboardInterrupt:
         print("\nSEC-GO interrupted.", file=sys.stderr)
         return 130
-    except (OSError, RuntimeError, TaskInputError, ValueError) as exc:
+    except (EOFError, OSError, RuntimeError, TaskInputError, ValueError) as exc:
         print(f"SEC-GO error: {exc}", file=sys.stderr)
         return 2
     return 2
+
+
+def _interactive(args: argparse.Namespace) -> int:
+    print("SEC-GO CLI")
+    print("仅可检查你拥有或已获得明确授权的 localhost/loopback 目标。")
+    print(f"模型配置: {args.settings}")
+    print()
+    objective = _prompt_required("任务描述: ")
+    title = input("任务标题 (留空自动生成): ").strip() or None
+    target = input("目标 [127.0.0.1]: ").strip() or "127.0.0.1"
+    ports = input("端口 [80,443,8000]: ").strip() or "80,443,8000"
+    authorized = input("确认你拥有目标或已获得明确授权? [y/N]: ").strip().casefold()
+    if authorized not in {"y", "yes", "是"}:
+        print("未确认授权, 任务已取消。", file=sys.stderr)
+        return 2
+    args.objective = objective
+    args.title = title
+    args.target = target
+    args.ports = ports
+    args.as_json = False
+    return asyncio.run(_run_task(args))
 
 
 async def _run_task(args: argparse.Namespace) -> int:
@@ -73,6 +127,7 @@ async def _run_task(args: argparse.Namespace) -> int:
         args.db,
         skills_root=None if args.skills is None else args.skills.resolve(),
         run_limits=RunLimits(max_steps=10, max_replans=2, max_seconds=args.max_seconds),
+        settings_path=args.settings.resolve(),
     )
     try:
         username = os.environ.get("SEC_GO_ADMIN_USERNAME", "admin")
@@ -91,6 +146,12 @@ async def _run_task(args: argparse.Namespace) -> int:
             print("SEC-GO")
             print(f"\nTask:\n{task.id}")
             print(f"\nRun:\n{task.run_id}")
+            model = (
+                services.settings.llm.model
+                if services.settings.llm.enabled
+                else "local-deterministic"
+            )
+            print(f"\nModel:\n{model}")
             print("\nExecution:\nAgent Runtime started...")
         state = await services.tasks.wait(user.id, task.id)
         detail = await services.tasks.get_task_detail(user.id, task.id)
@@ -114,14 +175,22 @@ async def _initialize(database: Path) -> int:
         await services.close()
 
 
-def _serve(host: str, port: int) -> int:
+def _serve(host: str, port: int, settings_path: Path) -> int:
     if not 1 <= port <= 65_535:
         raise ValueError("--port must be between 1 and 65535")
     try:
         import uvicorn
     except ImportError as exc:
         raise RuntimeError('uvicorn is required; install SEC-GO with the "web" extra') from exc
-    uvicorn.run("security_agent.main:app", host=host, port=port, workers=1)
+    from security_agent.interfaces.api import create_app
+
+    app = create_app(
+        services_factory=partial(
+            build_product_services,
+            settings_path=settings_path.expanduser().resolve(),
+        )
+    )
+    uvicorn.run(app, host=host, port=port, workers=1)
     return 0
 
 
@@ -170,6 +239,14 @@ def _parse_ports(value: str) -> tuple[int, ...]:
 def _default_title(objective: str) -> str:
     normalized = " ".join(objective.split())
     return normalized if len(normalized) <= 80 else f"{normalized[:77]}..."
+
+
+def _prompt_required(prompt: str) -> str:
+    while True:
+        value = input(prompt).strip()
+        if value:
+            return value
+        print("任务描述不能为空。", file=sys.stderr)
 
 
 if __name__ == "__main__":

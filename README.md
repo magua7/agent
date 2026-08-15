@@ -43,6 +43,57 @@ sec-go serve --host 127.0.0.1 --port 8000
 Windows 和 Linux 包装脚本、API、前端构建、SQLite 表结构及单进程/loopback-only 限制
 见 [产品文档](docs/PRODUCT.md)。
 
+### 可选外部模型
+
+SEC-GO 产品 CLI、Web 服务和默认 Uvicorn 入口共用仓库根目录的私有 `settings.json`。
+从示例复制后填写：
+
+```bash
+cp settings.example.json settings.json
+```
+
+Windows PowerShell：
+
+```powershell
+Copy-Item settings.example.json settings.json
+```
+
+```json
+{
+  "llm": {
+    "enabled": true,
+    "provider": "openai-compatible",
+    "base_url": "https://models.example/v1",
+    "api_key": "<private-api-key>",
+    "model": "<model-name>",
+    "timeout_seconds": 60,
+    "max_response_bytes": 2000000
+  }
+}
+```
+
+缺少 `settings.json` 或 `enabled: false` 时自动使用 `local-deterministic`，无需模型服务。
+`sec-go run` 和 `sec-go serve` 可用 `--settings <path>` 覆盖默认文件。远程模型地址必须为
+HTTPS；HTTP 只允许 `localhost` 或 loopback IP。当前只实现 OpenAI-compatible
+`POST <base_url>/chat/completions`。
+
+根目录 `/settings.json` 已被 `.gitignore` 排除；API Key 不写入日志或 SQLite。自定义
+`--settings` 文件也必须自行限制权限并排除版本控制。完整说明见
+[产品文档的外部模型配置](docs/PRODUCT.md#外部模型配置)。
+
+### Windows 双击启动 CLI
+
+首次安装 `python -m pip install -e ".[web]"` 后，可直接双击仓库根目录的
+`start.bat`。它会进入 Python 实现的交互模式，依次询问任务描述、标题、loopback 目标、
+端口和授权确认，再调用与普通 `sec-go run` 完全相同的 Application Service。若
+`settings.json` 尚不存在，脚本会从无密钥模板自动创建一份私有配置。
+
+命令行也可以通过同一个入口透传参数，此时不会暂停：
+
+```powershell
+.\start.bat run "检查明确授权的 localhost 服务" --target 127.0.0.1 --ports 8000
+```
+
 ## 快速开始
 
 需要 Python 3.11 或更高版本。
@@ -179,7 +230,11 @@ security-agent scan-local --target 127.0.0.1 --ports 8765 --skills "D:\挑战杯
 
 库方式调用时，将同一路径传给 `build_local_runtime(..., skills_root=Path(...))`。现有 [local-service-discovery](skills/local-service-discovery/) 可作为项目自有 Skill 与旧格式兼容示例；完整契约见 [Skill Catalog 与信任策略](docs/SKILLS.md)。
 
-`build_local_runtime` 默认仍使用可离线复现的确定性 Planner/Agent，它不会根据外部正文发明新动作。宿主只有在显式传入 `llm_provider=` 时才会组合 `StructuredLLMPlanner` 与结构化 LLM Agent，并消费经过 policy、capability、风险和 top-k 过滤后的 Skill 上下文；工具 scope 与 Verifier 边界保持不变。
+底层 `build_local_runtime` 在未传入 `llm_provider=` 时使用可离线复现的确定性
+Planner/Agent。SEC-GO 产品组合根会读取私有 `settings.json`：启用且校验通过时自动构造
+OpenAI-compatible Provider，并组合 `StructuredLLMPlanner` 与结构化 LLM Agent；缺少文件
+或禁用时回退 `local-deterministic`。无论使用哪种模型，运行时都只消费经过 policy、
+capability、风险和 top-k 过滤后的 Skill 上下文，工具 scope 与 Verifier 边界保持不变。
 
 为保持核心安装包轻量，wheel 只携带项目自有的 `local-service-discovery` 与其内置 policy；根目录下的 105 个外部 Skill 是私有源码仓库资产，不会被静默塞进 wheel。使用完整目录时必须显式传入仓库中的 `skills/` 路径。
 

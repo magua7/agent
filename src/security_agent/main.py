@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import os
 
+from security_agent.application.bootstrap import build_default_product_services
 from security_agent.interfaces.api import create_app
 
-app = create_app()
+app = create_app(services_factory=build_default_product_services)
 
 
 def run() -> None:

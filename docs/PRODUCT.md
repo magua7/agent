@@ -74,6 +74,7 @@ frontend/
   dist/                           npm run build 的生产静态产物
 scripts/sec-go.bat                Windows 包装脚本
 scripts/sec-go.sh                 Linux/macOS 包装脚本
+start.bat                         Windows 双击交互式 CLI 入口
 ```
 
 前端只依赖公开 JSON/SSE 契约，不导入 Kernel。API 只调用 Application Service，不让
@@ -154,6 +155,18 @@ sec-go serve --host 127.0.0.1 --port 8000
 `sec-go.bat` 会优先使用 `.venv\Scripts\python.exe`，否则寻找可用的 Python 3.11+，并把
 仓库 `src/` 放入 `PYTHONPATH`。
 
+只使用 CLI 时，可以直接双击仓库根目录的 `start.bat`。无参数启动会进入交互模式，要求
+输入任务描述、可选标题、loopback 目标、端口，并显式确认授权；任务输入由 Python 读取，
+不会由 Batch 拼接成命令。如果根目录尚无 `settings.json`，脚本会先从
+`settings.example.json` 创建一份被 Git 忽略的禁用模板。任务结束后窗口会暂停，方便
+查看结果。
+
+在 PowerShell 中也可透传完整 CLI 参数；有参数时不会暂停：
+
+```powershell
+.\start.bat run "检查明确授权的 localhost 服务" --target 127.0.0.1 --ports 8000
+```
+
 ## Linux/macOS 启动
 
 ```bash
@@ -178,6 +191,7 @@ sh scripts/sec-go.sh serve --host 127.0.0.1 --port 8000
 ```bash
 sec-go --help
 sec-go run --help
+sec-go interactive --help
 sec-go serve --help
 ```
 
@@ -204,11 +218,19 @@ sec-go run "分析本机测试服务的暴露端口" \
 sec-go run "检查 localhost 服务" --target localhost --ports 8000 --json
 ```
 
-`run` 还支持 `--db` 和 `--skills`。目标必须是 `localhost` 或显式 loopback IP，端口必须
-是 1 到 128 个 `1..65535` 的唯一整数。运行成功返回退出码 0，验证失败或产品错误返回
-非零退出码。
+交互方式（也是 `start.bat` 双击时调用的入口）：
 
-`serve` 没有 `--db` 参数。服务使用自定义数据库时，请配置 `SEC_GO_DB`：
+```bash
+sec-go interactive
+```
+
+`run` 还支持 `--db`、`--skills` 和 `--settings`。目标必须是 `localhost` 或显式
+loopback IP，端口必须是 1 到 128 个 `1..65535` 的唯一整数。运行成功返回退出码 0，
+验证失败或产品错误返回非零退出码。人类可读输出会显示本次使用的模型名；禁用外部模型
+时显示 `local-deterministic`。
+
+`serve` 没有 `--db` 参数，但支持 `--settings`。服务使用自定义数据库时，请配置
+`SEC_GO_DB`：
 
 ```bash
 export SEC_GO_DB=/absolute/path/to/sec-go.db
@@ -231,6 +253,101 @@ sec-go serve --host 127.0.0.1 --port 8000
 
 `sec-go serve` 使用它自己的 `--host`、`--port` 参数；不要误以为 `SEC_GO_HOST` 会覆盖该
 子命令的显式默认值。
+
+## 外部模型配置
+
+SEC-GO 产品层已经支持从仓库根目录的私有 `settings.json` 接入外部模型。CLI 的
+`sec-go run`、Web 的 `sec-go serve`、`python -m security_agent.main` 和直接执行
+`uvicorn security_agent.main:app` 都通过同一个产品组合根加载这套配置。
+
+先复制受版本控制的模板：
+
+Linux/macOS：
+
+```bash
+cp settings.example.json settings.json
+```
+
+Windows PowerShell：
+
+```powershell
+Copy-Item settings.example.json settings.json
+```
+
+完整结构如下：
+
+```json
+{
+  "llm": {
+    "enabled": true,
+    "provider": "openai-compatible",
+    "base_url": "https://models.example/v1",
+    "api_key": "<private-api-key>",
+    "model": "<model-name>",
+    "timeout_seconds": 60,
+    "max_response_bytes": 2000000
+  }
+}
+```
+
+字段含义：
+
+| 字段 | 类型 | 含义 |
+| --- | --- | --- |
+| `enabled` | boolean | `true` 启用外部模型；`false` 使用本地确定性 Planner/Agent |
+| `provider` | string | 当前启用时只接受精确值 `openai-compatible` |
+| `base_url` | string | API 基础地址，例如 `https://models.example/v1` |
+| `api_key` | string | 作为 Bearer Token 发送给模型端点的私有 Key |
+| `model` | string | 请求体中的模型标识 |
+| `timeout_seconds` | positive number | 单次 HTTP 请求超时，示例默认 60 秒 |
+| `max_response_bytes` | positive integer | 流式读取响应时的硬字节上限，示例默认 2,000,000 |
+
+配置文件缺失、内容为 `{}`、缺少 `llm`，或 `enabled: false` 时，不会构造远程 Provider，
+产品自动回退到 `local-deterministic`。一旦设为 `enabled: true`，`base_url`、`api_key` 和
+`model` 必须是非空字符串；未知字段、重复键、错误类型、非标准数字或超过 64 KiB 的文件
+会被拒绝，而不是静默猜测。
+
+默认文件固定为 `<root>/settings.json`。两个需要模型的 CLI 子命令都可显式覆盖：
+
+```bash
+sec-go run "检查 localhost 服务" \
+  --target 127.0.0.1 \
+  --ports 8000 \
+  --settings /absolute/path/to/private-settings.json
+
+sec-go serve \
+  --host 127.0.0.1 \
+  --port 8000 \
+  --settings /absolute/path/to/private-settings.json
+```
+
+`sec-go init` 只初始化数据库和管理员，不接受也不需要 `--settings`。默认 ASGI 入口
+`security_agent.main:app` 始终读取根目录 `settings.json`；需要任意配置路径时使用
+`sec-go serve --settings ...`。
+
+传输安全规则：
+
+- 远程主机的 `base_url` 必须使用 HTTPS；
+- HTTP 只允许 `localhost` 或明确的 IPv4/IPv6 loopback 地址；
+- URL 不允许内嵌用户名或密码；
+- 当前 Provider 不跟随重定向，也不读取系统代理环境变量；
+- 当前只实现 OpenAI-compatible Chat Completions：
+  `POST <base_url>/chat/completions`，尚未实现 Responses API、Anthropic 原生协议、
+  Ollama 专用协议或厂商 SDK。
+
+Key 安全规则：
+
+- 根目录 `/settings.json` 已由 `.gitignore` 排除，模板 `settings.example.json` 不含密钥；
+- `api_key` 的对象表示和配置错误不会显示 Key；
+- Key 不写入 SEC-GO 日志、任务 JSON、Action、Evidence 或 SQLite；
+- Key 只用于模型请求的 `Authorization: Bearer ...` Header；
+- 自定义 `--settings` 路径不会自动被仓库根 `.gitignore` 覆盖，必须自行设置文件权限并
+  排除版本控制；
+- 不要把 Key 放进前端 `.env`、浏览器、任务描述、命令行参数或截图。
+
+模型只负责结构化 Planner/Agent 决策。Task scope、Tool Registry、执行策略、Evidence
+持久化和 Verifier 完成门槛不会因为启用外部模型而放宽。发送给远程模型的任务、Skill
+上下文和 Evidence preview 仍可能含敏感信息，部署者必须自行评估数据外发策略。
 
 ## HTTP API
 
