@@ -286,6 +286,19 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await store.close()
 
+    async def test_run_accepts_a_preallocated_run_identity(self) -> None:
+        store, runtime, _events = await _build_runtime(tool=SequencedScanTool())
+        try:
+            state = await runtime.run(
+                _scan_task("preallocated", 41013),
+                run_id="run-preallocated",
+            )
+
+            self.assertEqual("run-preallocated", state.run_id)
+            self.assertEqual(state, await store.get_run("run-preallocated"))
+        finally:
+            await store.close()
+
     async def test_run_freezes_one_skill_snapshot_and_emits_its_hash(self) -> None:
         skill = SkillDocument(
             name="fixture-guidance",

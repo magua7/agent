@@ -12,6 +12,20 @@ from security_agent.interfaces.bootstrap import build_local_runtime
 
 
 class BootstrapTests(unittest.IsolatedAsyncioTestCase):
+    async def test_memory_event_capture_can_be_disabled_without_changing_the_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            default_bundle = await build_local_runtime(Path(directory) / "default.sqlite3")
+            disabled_bundle = await build_local_runtime(
+                Path(directory) / "disabled.sqlite3",
+                capture_events=False,
+            )
+            try:
+                self.assertIsNotNone(default_bundle.memory_events)
+                self.assertIsNone(disabled_bundle.memory_events)
+            finally:
+                await default_bundle.close()
+                await disabled_bundle.close()
+
     async def test_composition_passes_the_real_tool_capability_inventory_to_skills(self) -> None:
         captured: dict[str, object] = {}
 

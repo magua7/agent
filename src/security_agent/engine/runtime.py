@@ -80,9 +80,9 @@ class AgentRuntime:
         self._knowledge = knowledge_provider
         self._limits = limits or RunLimits()
 
-    async def run(self, task: TaskSpec) -> RunState:
+    async def run(self, task: TaskSpec, *, run_id: str | None = None) -> RunState:
         timed_out = asyncio.Event()
-        execution = asyncio.create_task(self._run_task(task, timed_out))
+        execution = asyncio.create_task(self._run_task(task, timed_out, run_id))
         try:
             return await asyncio.wait_for(
                 asyncio.shield(execution),
@@ -100,8 +100,13 @@ class AgentRuntime:
                 pass
             raise
 
-    async def _run_task(self, task: TaskSpec, timed_out: asyncio.Event) -> RunState:
-        state = RunState.create(task)
+    async def _run_task(
+        self,
+        task: TaskSpec,
+        timed_out: asyncio.Event,
+        run_id: str | None,
+    ) -> RunState:
+        state = RunState.create(task, run_id=run_id)
         started = time.monotonic()
         try:
             await self._runs.save_run(state)

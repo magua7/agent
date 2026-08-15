@@ -23,9 +23,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Reserved extension boundaries. They intentionally add no dependency until an
-# adapter is implemented, so installing an extra never pretends a feature exists.
-web = []
+# Product adapters stay optional so the Security Agent Kernel remains lightweight.
+# Bare uvicorn is intentional: SSE does not require the heavier "standard" extra.
+web = [
+    "bcrypt>=4.2,<6",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
+]
 mcp = []
 knowledge = []
 dev = [
@@ -35,6 +39,7 @@ dev = [
 
 [project.scripts]
 security-agent = "security_agent.interfaces.cli:main"
+sec-go = "security_agent.interfaces.product_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -52,6 +57,7 @@ security_agent = [
     "docs/ARCHITECTURE.md",
     "docs/DOMAIN_MODEL.md",
     "docs/EXTENSION_POINTS.md",
+    "docs/PRODUCT.md",
     "docs/REFERENCE_RESEARCH.md",
     "docs/SKILLS.md",
 ]

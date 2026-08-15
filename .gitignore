@@ -1,17 +1,28 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
-.coverage
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+.coverage
 .venv/
 build/
 dist/
+
 *.sqlite
 *.sqlite3
+data/*.db
+data/*.db-*
+data/.sec-go-secret
 runtime-data/
+
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+
 .env
+.env.*
+!.env.example
 
 # Deferred external white-box audit plugin. Keep it local until its scripts,
 # provenance, and sandbox contract are reviewed independently.

@@ -20,8 +20,28 @@
 - 确定性本地 Agent，以及 JSON 强校验的 LLM Planner/Agent。
 - 基于标准 `SKILL.md` frontmatter 与仓库可信 `skills/policy.json` 的 Skill Catalog；支持有界相关性选择、故障隔离和渐进加载。
 - 机器可读 CLI、事件总线、真实 localhost E2E、失败重试/replan、并发隔离测试。
+- 可选 SEC-GO 产品层：本地管理员、用户隔离任务、REST/SSE、产品 CLI 和 React Web 界面。
 
-完整边界见 [架构说明](docs/ARCHITECTURE.md)、[领域模型](docs/DOMAIN_MODEL.md)、[Skill Catalog 与信任策略](docs/SKILLS.md) 和 [扩展点](docs/EXTENSION_POINTS.md)。
+完整边界见 [SEC-GO 产品使用与部署](docs/PRODUCT.md)、[架构说明](docs/ARCHITECTURE.md)、[领域模型](docs/DOMAIN_MODEL.md)、[Skill Catalog 与信任策略](docs/SKILLS.md) 和 [扩展点](docs/EXTENSION_POINTS.md)。
+
+## SEC-GO 产品快速开始
+
+产品层使用独立的 `sec-go` 入口和 `data/sec-go.db`，需要可选 Web 依赖。请先按
+[管理员安全说明](docs/PRODUCT.md#首次初始化与管理员安全) 配置首次初始化凭据，再执行：
+
+```bash
+python -m pip install -e ".[web]"
+sec-go init
+sec-go serve --host 127.0.0.1 --port 8000
+```
+
+首次启动若未配置环境变量会创建 `admin / secgo`，该默认凭据仅供本机开发。真实使用前
+必须在首次初始化前设置 `SEC_GO_ADMIN_PASSWORD` 和至少 32 字节的
+`SEC_GO_SECRET_KEY`。当前没有密码修改 API，已创建账号不会因修改环境变量而自动轮换
+密码。
+
+Windows 和 Linux 包装脚本、API、前端构建、SQLite 表结构及单进程/loopback-only 限制
+见 [产品文档](docs/PRODUCT.md)。
 
 ## 快速开始
 
@@ -85,18 +105,20 @@ LLM、外部 Skill 正文、Knowledge 和目标返回内容都按不可信输入
 
 ```text
 docs/                         架构、领域模型、Skill 信任策略、扩展设计与调研
+frontend/                     React/TypeScript/Vite 产品界面
 skills/                       105 个外部 Skill + 1 个项目自有 Skill、可信 policy.json；白盒包暂缓
-scripts/                      Skill 语料迁移与幂等检查工具
+scripts/                      SEC-GO 启动包装与 Skill 语料迁移工具
 src/security_agent/
+  application/                Auth、Task、Run 产品服务与产品存储端口
   domain/                     纯 stdlib 领域对象和状态机
   contracts/                  LLM/Tool/Repository/Event/Skill/Agent ports
   engine/                     Planner、Runtime、Executor、Context、Verifier、Replanner
   infrastructure/
     llm/                      Fake 与 OpenAI-compatible adapters
     skills/                   文件 Skill 与空 Knowledge adapter
-    storage/                  SQLite repositories/event sink
+    storage/                  Kernel 审计库与 users/tasks 产品投影
     tools/                    四个 scope-aware 本地工具
-  interfaces/                 composition root 与 CLI
+  interfaces/                 Kernel/Product CLI 与 FastAPI 边界
 tests/                        单元、存储、并发、FakeLLM、真实 localhost E2E
 ```
 
@@ -171,7 +193,9 @@ Core 安装仅有一个小型运行依赖：
 httpx>=0.27,<1
 ```
 
-领域层和 SQLite 均只使用标准库。Web、MCP、Knowledge extras 当前为空，因为对应 adapter 尚未实现；安装它们不会偷偷拉入大型依赖：
+领域层和 SQLite 均只使用标准库。`web` extra 为已经实现的产品 API/认证安装
+`bcrypt`、`fastapi` 和轻量 `uvicorn`；`mcp`、`knowledge` extras 当前为空，仅表示下一阶段
+接口预留：
 
 ```bash
 python -m pip install -e ".[web]"
@@ -201,10 +225,11 @@ mypy
 - Verifier 能确定性验证动作来源、hash、引用、状态和 criteria coverage；通用自然语言 criterion 的语义真实性仍依赖 Agent assessment，关键结论应增加专用结构化验证器或人工复核。
 - OpenAI-compatible adapter 限制响应大小并要求远程 HTTPS，但尚未提供自动重试、限流或字段级数据外发策略。
 - SQLite 适合单机、单写入者轻量运行，不是分布式队列；跨 plan/run/evidence/action 的完整 checkpoint 事务与 CAS revision 尚未实现。
+- SEC-GO 产品编排依赖当前进程内的任务表，固定单 worker；重启不会自动恢复活动任务。
+- 当前产品支持边界是 API 与目标均为 loopback；没有公网 TLS、速率限制、账号锁定或多进程协调。
 
 ## Roadmap（尚未实现）
 
-- 独立 Web/API 包：REST + SSE，不让 Core 依赖 FastAPI/前端。
 - 可选 MCP Tool Adapter 与连接生命周期。
 - Markdown/JSON + SQLite FTS5 Knowledge Provider。
 - 可真正阻断执行的人工审批工作流，以及独立进程执行沙箱。

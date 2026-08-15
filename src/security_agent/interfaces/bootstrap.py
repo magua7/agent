@@ -32,7 +32,7 @@ _PACKAGED_SKILLS = Path(__file__).resolve().parents[1] / "builtin_skills"
 class RuntimeBundle:
     runtime: AgentRuntime
     store: SQLiteStore
-    memory_events: MemoryEventSink
+    memory_events: MemoryEventSink | None
 
     async def close(self) -> None:
         await self.store.close()
@@ -44,12 +44,14 @@ async def build_local_runtime(
     skills_root: Path | None = None,
     llm_provider: LLMProvider | None = None,
     run_limits: RunLimits | None = None,
+    capture_events: bool = True,
 ) -> RuntimeBundle:
     database.parent.mkdir(parents=True, exist_ok=True)
     store = SQLiteStore(database)
     await store.initialize()
-    memory_events = MemoryEventSink()
-    events = EventBus((store, memory_events), strict=True)
+    memory_events = MemoryEventSink() if capture_events else None
+    event_sinks = (store, memory_events) if memory_events is not None else (store,)
+    events = EventBus(event_sinks, strict=True)
     tools = build_default_tool_registry()
     available_capabilities = frozenset(
         capability for tool in tools.list() for capability in tool.capabilities
