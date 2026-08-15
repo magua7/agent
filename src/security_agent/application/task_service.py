@@ -10,7 +10,7 @@ from typing import Any
 from security_agent.application.models import EventPage, ProductRunEvent, ProductTask, TaskStatus
 from security_agent.application.ports import ProductRepository
 from security_agent.application.run_service import RunService
-from security_agent.domain import RunState, RunStatus, TaskType
+from security_agent.domain import RunState, RunStatus, TaskSpec, TaskType
 from security_agent.engine import TaskInterpreter
 from security_agent.infrastructure.storage import SQLiteStore
 
@@ -70,10 +70,51 @@ class TaskService:
                 "no exploit activity",
             ),
         )
-        product_task = await self._products.create_task(
+        return await self._create_and_start(
             user_id,
             normalized_title,
             normalized_description,
+            spec,
+        )
+
+    async def create_task_from_spec(
+        self,
+        user_id: str,
+        *,
+        title: str,
+        description: str,
+        spec: TaskSpec,
+    ) -> ProductTask:
+        """Persist and start a task from an already-validated :class:`TaskSpec`.
+
+        This is the natural-language path used by the AssistantService.  The
+        caller (a trusted local operator) remains responsible for the targets
+        inside *spec*; the kernel still enforces that every tool call stays
+        inside the declared scope.
+        """
+
+        normalized_title = _required_text(title, "title", maximum=200)
+        normalized_description = _required_text(description, "description", maximum=20_000)
+        if not isinstance(spec, TaskSpec):
+            raise TaskInputError("spec must be a validated TaskSpec")
+        return await self._create_and_start(
+            user_id,
+            normalized_title,
+            normalized_description,
+            spec,
+        )
+
+    async def _create_and_start(
+        self,
+        user_id: str,
+        title: str,
+        description: str,
+        spec: TaskSpec,
+    ) -> ProductTask:
+        product_task = await self._products.create_task(
+            user_id,
+            title,
+            description,
             task_spec=spec,
         )
         await self._runs.start(product_task)

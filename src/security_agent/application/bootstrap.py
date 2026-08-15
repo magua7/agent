@@ -8,6 +8,7 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
+from security_agent.application.assistant_service import AssistantService
 from security_agent.application.auth_service import AuthService
 from security_agent.application.run_service import RunService
 from security_agent.application.settings import (
@@ -34,6 +35,7 @@ class ProductServices:
     database: Path
     settings: ProductSettings
     llm_provider: OpenAICompatibleProvider | None = None
+    assistant: AssistantService | None = None
 
     async def close(self) -> None:
         try:
@@ -99,6 +101,7 @@ async def build_product_services(
             max_concurrent_runs=max_concurrent_runs,
         )
         tasks = TaskService(products, runs, runtime.store)
+        assistant = AssistantService(tasks, llm_provider=llm_provider)
         return ProductServices(
             auth=auth,
             tasks=tasks,
@@ -108,6 +111,7 @@ async def build_product_services(
             database=resolved_database,
             settings=settings,
             llm_provider=llm_provider,
+            assistant=assistant,
         )
     except BaseException:
         try:
