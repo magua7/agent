@@ -21,6 +21,7 @@ from security_agent.infrastructure.llm import (
     OpenAICompatibleConfig,
     OpenAICompatibleProvider,
 )
+from security_agent.infrastructure.storage.conversations import SQLiteConversationStore
 from security_agent.infrastructure.storage.product import SQLiteProductStore
 from security_agent.interfaces.bootstrap import RuntimeBundle, build_local_runtime
 
@@ -101,7 +102,13 @@ async def build_product_services(
             max_concurrent_runs=max_concurrent_runs,
         )
         tasks = TaskService(products, runs, runtime.store)
-        assistant = AssistantService(tasks, llm_provider=llm_provider)
+        conversations = SQLiteConversationStore(resolved_database)
+        await conversations.initialize()
+        assistant = AssistantService(
+            tasks,
+            llm_provider=llm_provider,
+            conversations=conversations,
+        )
         return ProductServices(
             auth=auth,
             tasks=tasks,

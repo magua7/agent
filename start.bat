@@ -10,12 +10,12 @@ if not exist "%~dp0settings.json" if exist "%~dp0settings.example.json" (
   echo.
 )
 
-if "%~1"=="" goto :interactive
+if "%~1"=="" goto :repl
 call "%~dp0scripts\sec-go.bat" %*
 exit /b %ERRORLEVEL%
 
-:interactive
-call "%~dp0scripts\sec-go.bat" interactive
+:repl
+call "%~dp0scripts\sec-go.bat"
 set "EXIT_CODE=%ERRORLEVEL%"
 echo.
 if not "%EXIT_CODE%"=="0" echo SEC-GO exited with code %EXIT_CODE%.

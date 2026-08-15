@@ -148,6 +148,31 @@ class TaskProjection:
 
 
 @dataclass(frozen=True, slots=True)
+class ConversationMessage:
+    """One persisted line of a user conversation; bounded, never raw Evidence."""
+
+    id: int
+    conversation_id: str
+    role: str
+    content: str
+    kind: str
+    task_id: str | None
+    created_at: datetime = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.id, bool) or not isinstance(self.id, int) or self.id <= 0:
+            raise ValueError("conversation message id must be a positive integer")
+        _require_text(self.conversation_id, "conversation_id", maximum=128)
+        if self.role not in {"user", "assistant", "system"}:
+            raise ValueError("message role must be user, assistant, or system")
+        _require_text(self.content, "message content", maximum=20_000)
+        _require_text(self.kind, "message kind", maximum=32)
+        if self.task_id is not None:
+            _require_text(self.task_id, "message task_id", maximum=128)
+        _require_utc(self.created_at, "message created_at")
+
+
+@dataclass(frozen=True, slots=True)
 class ProductRunEvent:
     """A persisted kernel event with its stable SQLite row cursor."""
 

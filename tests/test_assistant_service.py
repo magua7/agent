@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import tempfile
 import unittest
@@ -56,7 +57,13 @@ class AssistantServiceSetup:
         self.assistant = assistant
 
     async def asyncTearDown(self) -> None:
+        for task_id in self.services.runs.active_task_ids:
+            await self.services.tasks.wait(self.admin.id, task_id)
         await self.services.close()
+        # Cancelling a mid-write run can leave an orphaned to_thread SQLite
+        # write holding the database file; drain the default executor before
+        # removing the temporary directory on Windows.
+        await asyncio.get_running_loop().shutdown_default_executor()
         self.temporary.cleanup()
 
     async def task_count(self) -> int:
@@ -249,7 +256,184 @@ class AssistantServiceWithLLMTests(AssistantServiceSetup, unittest.IsolatedAsync
 
         self.assertEqual(1, len(provider.requests))
         self.assertEqual("assistant_message", provider.requests[0].operation)
-        self.assertEqual({"message": "你好"}, provider.requests[0].payload)
+        payload = provider.requests[0].payload
+        self.assertEqual("你好", payload["message"])
+        self.assertIn("conversation", payload)
+        self.assertIn("recent_task", payload)
+
+    async def test_llm_may_not_invent_ports_when_operator_named_none(self) -> None:
+        assistant = self.assistant_with(
+            _task_payload(inputs={"target": "127.0.0.1", "ports": [1, 2, 3]})
+        )
+
+        result = await assistant.handle_message(self.admin.id, "扫描 127.0.0.1")
+
+        self.assertIs(result.kind, MessageKind.TASK)
+        self.assertIsNotNone(result.task)
+        task = result.task
+        if task is None:
+            raise AssertionError("task result lost its ProductTask")
+        spec = task.task_spec
+        if spec is None:
+            raise AssertionError("task was created without a TaskSpec")
+        self.assertEqual([22, 80, 443, 8000, 8080], spec.inputs["ports"])
+
+    async def test_llm_file_read_task_does_not_require_network_targets(self) -> None:
+        root = Path(self.temporary.name)
+        target_file = root / "notes.txt"
+        target_file.write_text("fixture content", encoding="utf-8")
+        assistant = self.assistant_with(
+            json.dumps(
+                {
+                    "kind": "task",
+                    "reply": "读取文件。",
+                    "title": "读取本地文件",
+                    "task_type": "code_audit",
+                    "capability": "file.read",
+                    "network_targets": [],
+                    "file_roots": [str(root)],
+                    "inputs": {"path": str(target_file)},
+                    "success_criteria": ["读取文件并保留证据"],
+                    "missing_fields": [],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        result = await assistant.handle_message(self.admin.id, f"读取 {target_file}")
+
+        self.assertIs(result.kind, MessageKind.TASK)
+        self.assertIsNotNone(result.task)
+        task = result.task
+        if task is None:
+            raise AssertionError("task result lost its ProductTask")
+        spec = task.task_spec
+        if spec is None:
+            raise AssertionError("task was created without a TaskSpec")
+        self.assertEqual((), spec.scope.network_targets)
+        self.assertEqual((str(root),), spec.scope.file_roots)
+        self.assertEqual(str(target_file), spec.inputs["path"])
+
+        state = await self.services.tasks.wait(self.admin.id, task.id)
+        if state is None:
+            raise AssertionError("runtime returned no state")
+        self.assertEqual(RunStatus.COMPLETED, state.status)
+
+    async def test_llm_file_task_may_not_invent_file_roots(self) -> None:
+        assistant = self.assistant_with(
+            json.dumps(
+                {
+                    "kind": "task",
+                    "reply": "读取文件。",
+                    "title": "读取本地文件",
+                    "task_type": "code_audit",
+                    "capability": "file.read",
+                    "network_targets": [],
+                    "file_roots": ["C:\\invented\\root"],
+                    "inputs": {"path": "C:\\invented\\root\\secret.txt"},
+                    "success_criteria": ["读取文件并保留证据"],
+                    "missing_fields": [],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        result = await assistant.handle_message(self.admin.id, "读取 C:\\Users\\HP\\notes.txt")
+
+        self.assertIsNot(result.kind, MessageKind.TASK)
+        self.assertEqual(0, await self.task_count())
+
+    async def test_llm_multi_turn_completes_a_clarified_task(self) -> None:
+        assistant = self.assistant_with(
+            json.dumps(
+                {"kind": "clarification", "reply": "请补充目标。", "missing_fields": ["target"]},
+                ensure_ascii=False,
+            ),
+            _task_payload(inputs={"target": "127.0.0.1", "ports": [443]}),
+        )
+
+        first = await assistant.handle_message(
+            self.admin.id,
+            "帮我扫描一下",
+            conversation_id="conv-multi",
+        )
+        second = await assistant.handle_message(
+            self.admin.id,
+            "127.0.0.1 的 443",
+            conversation_id="conv-multi",
+        )
+
+        self.assertIs(first.kind, MessageKind.CLARIFICATION)
+        self.assertIs(second.kind, MessageKind.TASK)
+        self.assertIsNotNone(second.task)
+        task = second.task
+        if task is None:
+            raise AssertionError("task result lost its ProductTask")
+        spec = task.task_spec
+        if spec is None:
+            raise AssertionError("task was created without a TaskSpec")
+        self.assertEqual(("127.0.0.1",), spec.scope.network_targets)
+        self.assertEqual([443], spec.inputs["ports"])
+        self.assertEqual(1, await self.task_count())
+
+    async def test_conversation_histories_do_not_leak_between_conversations(self) -> None:
+        clarified = await self.assistant.handle_message(
+            self.admin.id,
+            "帮我扫描一下",
+            conversation_id="conv-a",
+        )
+        self.assertIs(clarified.kind, MessageKind.CLARIFICATION)
+
+        isolated = await self.assistant.handle_message(
+            self.admin.id,
+            "127.0.0.1",
+            conversation_id="conv-b",
+        )
+        self.assertIsNot(isolated.kind, MessageKind.TASK)
+        self.assertEqual(0, await self.task_count())
+
+        completed = await self.assistant.handle_message(
+            self.admin.id,
+            "127.0.0.1 的 443",
+            conversation_id="conv-a",
+        )
+        self.assertIs(completed.kind, MessageKind.TASK)
+        self.assertEqual(1, await self.task_count())
+
+    async def test_follow_up_question_answers_from_recent_task(self) -> None:
+        created = await self.assistant.handle_message(
+            self.admin.id,
+            "扫描 127.0.0.1 的 443",
+            conversation_id="conv-follow",
+        )
+        self.assertIs(created.kind, MessageKind.TASK)
+        self.assertIsNotNone(created.task)
+        task = created.task
+        if task is None:
+            raise AssertionError("task result lost its ProductTask")
+        await self.services.tasks.wait(self.admin.id, task.id)
+
+        follow_up = await self.assistant.handle_message(
+            self.admin.id,
+            "刚才发现了什么?",
+            conversation_id="conv-follow",
+        )
+
+        self.assertIs(follow_up.kind, MessageKind.CHAT)
+        self.assertIn("任务", follow_up.reply)
+        self.assertIsNone(follow_up.task)
+        self.assertEqual(1, await self.task_count())
+
+    async def test_conversation_id_flows_through_the_result(self) -> None:
+        result = await self.assistant.handle_message(self.admin.id, "你是谁")
+
+        self.assertTrue(result.conversation_id)
+        reused = await self.assistant.handle_message(
+            self.admin.id,
+            "你好",
+            conversation_id=result.conversation_id,
+        )
+        self.assertEqual(result.conversation_id, reused.conversation_id)
 
 
 class BootstrapWiringTests(AssistantServiceSetup, unittest.IsolatedAsyncioTestCase):

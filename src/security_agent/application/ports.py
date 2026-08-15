@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from security_agent.application.models import (
+    ConversationMessage,
     EventPage,
     ProductTask,
     ProductUser,
@@ -12,6 +13,31 @@ from security_agent.application.models import (
     TaskStatus,
 )
 from security_agent.domain import TaskSpec
+
+
+class ConversationRepository(Protocol):
+    """Bounded persistence for assistant conversations (no giant JSON blobs)."""
+
+    async def ensure_conversation(self, user_id: str, conversation_id: str) -> None: ...
+
+    async def record_message(
+        self,
+        conversation_id: str,
+        *,
+        role: str,
+        content: str,
+        kind: str,
+        task_id: str | None = None,
+    ) -> ConversationMessage: ...
+
+    async def recent_messages(
+        self,
+        conversation_id: str,
+        *,
+        limit: int,
+    ) -> tuple[ConversationMessage, ...]: ...
+
+    async def last_task_id(self, conversation_id: str) -> str | None: ...
 
 
 class ProductRepository(Protocol):
